@@ -65,11 +65,12 @@ plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, ma
 #### only for meta analisys 
 edgeR_pipeline_per_study <- function(DGE_matrix_with_all_batches = complete_DGE_matrix,
                                       library_groups_with_all_batches = complete_library_groups,
-                                     study = 3) {
+                                     study = 51) {
   DGE_matrix_study_X <- NULL
   DGE_matrix_study_X$samples <- DGE_matrix_with_all_batches$samples[which(batch == study),]
   if (mean(DGE_matrix_study_X$samples$lib.size) == 0){
-    warning(paste0("lib.size == 0 in study ", study, " consider remapping or removing this sample"))
+    warning(paste0("lib.size == 0 in study ", study, " consider remapping or removing this samples"))
+    return(NULL)
   } else{
   DGE_matrix_study_X$counts <- DGE_matrix_with_all_batches$counts[,
                                                                   which(colnames(DGE_matrix_with_all_batches$counts) %in%
@@ -99,10 +100,11 @@ edgeR_pipeline_per_study <- function(DGE_matrix_with_all_batches = complete_DGE_
 
 ####Get All pairwise comparisons
 library(gtools)
-all_pairwise_vector <- function(count_matrix = study_4_matrix){
-  all_combinations_matrix <- combinations(len(unique(count_matrix$samples$group)),
+all_pairwise_vector <- function(count_matrix_groups = study_matrix$samples$group){
+  levels(count_matrix_groups) <- unique(count_matrix_groups)
+  all_combinations_matrix <- combinations(len(unique(count_matrix_groups)),
                                           2,
-                                          levels(count_matrix$samples$group),
+                                          levels(count_matrix_groups),
                                           repeats.allowed = FALSE)
   pairwise_comparisons_direction_1 <- paste0(all_combinations_matrix[,1],
                                              " - ",
@@ -114,38 +116,38 @@ all_pairwise_vector <- function(count_matrix = study_4_matrix){
   return(all_pairwise_comparisons)
 }
 ####
-get_pairwise_DEGs <- function(count_matrix = study_4_matrix,
-                                 contrast_vector = contrast_to_make_vector,
-                                 fit = fit_model){
+get_pairwise_DEGs <- function(count_matrix = DGE_matrix,
+                              contrast_vector = contrast_to_make_vector,
+                              fit = fit_model,
+                              lfc = 0.2
+                              ) {
+  levels(count_matrix$samples$group) <- unique(count_matrix$samples$group)
   all_combinations_matrix <- combinations(len(unique(count_matrix$samples$group)),
                                           2,
                                           levels(count_matrix$samples$group),
                                           repeats.allowed = FALSE)
   contrast_result <- list()
   for(counter in 1:(len(contrast_vector))){
-    contrast <- do.call(makeContrasts, list(contrast_vector[counter], levels=count_matrix$samples$group))
-    #makeContrasts(contrast_vector[counter], levels = count_matrix$samples$group)
-    QLFtest <- glmQLFTest(fit, contrast = contrast)
+    contrast <- do.call(makeContrasts, list(contrast_vector[counter], levels=unique(count_matrix$samples$group)))
+    glmTreat <- glmTreat(fit, contrast = contrast, lfc = lfc)
     if(counter <= len(contrast_vector)/2){
-      comparison_name <- paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2])
-      #assign(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2]), decideTests(QLFtest))
-      contrast_result[[comparison_name]] <- list(Comparison = comparison_name, QLFtest = QLFtest)
-      #assign(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2]), QLFtest)
-      results %<>% append(paste0(all_combinations_matrix[counter,1],"VS",all_combinations_matrix[counter,2]))
+      comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter,1], "_relative_to_", all_combinations_matrix[counter,2])
+      contrast_result[[comparison_name]] <- list(Comparison = comparison_name, glmTreat = glmTreat)
       text <- paste0("Done: ", crayon::bold(crayon::red(all_combinations_matrix[counter,1])), " VS ", crayon::bold(crayon::cyan(all_combinations_matrix[counter,2])), "\n")
       cat(text)
-    }  else {
-      comparison_name <- paste0(all_combinations_matrix[counter-len(contrast_vector)/2,2],"VS",all_combinations_matrix[counter-len(contrast_vector)/2,1])
-      #assign(paste0(all_combinations_matrix[counter-len(contrast_vector)/2,2],"VS",all_combinations_matrix[counter-len(contrast_vector)/2,1]), decideTests(QLFtest))
-      contrast_result[[comparison_name]] <- list(Comparison = comparison_name, QLFtest = QLFtest)
-      #assign(paste0(all_combinations_matrix[counter-len(contrast_vector)/2,2],"VS",all_combinations_matrix[counter-len(contrast_vector)/2,1],"_QLFtest"), QLFtest)
-      results %<>% append(paste0(all_combinations_matrix[counter-len(contrast_vector)/2,2],"VS",all_combinations_matrix[counter-len(contrast_vector)/2,1]))
-      text <- paste0("Done: ",crayon::bold(crayon::cyan(all_combinations_matrix[counter-len(contrast_vector)/2,2])), " VS ", crayon::bold(crayon::red(all_combinations_matrix[counter-len(contrast_vector)/2,1])), "\n")
-      cat(text)
+      }  else {
+        comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter-len(contrast_vector)/2,2], "_relative_to_", all_combinations_matrix[counter-len(contrast_vector)/2,1])
+        contrast_result[[comparison_name]] <- list(Comparison = comparison_name, glmTreat = glmTreat)
+        text <- paste0("Done: ",crayon::bold(crayon::cyan(all_combinations_matrix[counter-len(contrast_vector)/2,2])), " VS ", crayon::bold(crayon::red(all_combinations_matrix[counter-len(contrast_vector)/2,1])), "\n")
+        cat(text)
+      }
     }
-  }
   return(contrast_result)
 }
+
+
+
+
 
 ### This part load some data for ensemble so some functions works
 
