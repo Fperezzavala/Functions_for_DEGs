@@ -1,7 +1,18 @@
 ### This script load most of the functions and libraries that I made or source for my DEG analysis
 library(ggplot2)
+library(gtools)
 library(magrittr)
 library(crayon)
+library(viridis)
+library(ggrepel)
+library(parallel)
+library(MASS)
+library(foreach)
+library(doParallel)
+library(doSNOW)
+numCores <- detectCores() - 2
+numCores
+#registerDoParallel(numCores)
 ### Because Im lazy....
 len <- function(x) (length(x)) # len instead of length
 #not in function
@@ -34,6 +45,7 @@ get.rownames <- function(x,y) rownames(x[x == y,])
 # This function uses a matrix and plot its values according to a provided gene list
 #
 plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, matrix = mean_z_score_of_CPM){
+  #matrix$index <- 1:max(dim(matrix))
   matrix_of_gene_list <- melt(matrix[which(rownames(matrix) %in% c(gene_list)),])
   matrix_of_gene_list <- 
     transform(matrix_of_gene_list,
@@ -46,20 +58,21 @@ plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, ma
     geom_hline(yintercept = 0, size = 1.5) +
     geom_jitter(width=0.1, alpha = 0.7, aes(color = variable)) +
     geom_boxplot(width=0.4, alpha = 0.15,
-                 aes(fill = variable, color = variable, color = after_scale(darken(color, .4, space = "HLS")))) +
+                 aes(fill = variable, color = variable, color = after_scale(colorspace::darken(color, .4, space = "HLS")))) +
     stat_summary(geom = 'text', label = rev(test$groups$groups), fun.y = max, vjust = 0.25, hjust = -0.1, size = 10) +
     geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = 0.7, color = "#00000000") +
     theme_light() +
-    theme(axis.text=element_text(size=24),
+    theme(axis.text=element_text(size=24, color = "#222222", family = family_font),
                 axis.title=element_text(size=24,face="bold"),
           legend.position = "top",
+          axis.text.y = element_text(size = 28),
           legend.title = element_blank()) +
     ggtitle(deparse(substitute(gene_list))) +
     ylab("Z score") +
     xlab("") +
     coord_flip() +
-    scale_fill_manual(values = c(viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1), viridis(2, option = "A", end = 0.6, begin = 0.4))) +
-    scale_color_manual(values = c(viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1), viridis(2, option = "A", end = 0.6, begin = 0.4))) +
+    scale_fill_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
+    scale_color_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
     scale_y_continuous(limits = c(-1.9, 1.9))
 }
 #### only for meta analisys 
@@ -99,8 +112,8 @@ edgeR_pipeline_per_study <- function(DGE_matrix_with_all_batches = complete_DGE_
 }
 
 ####Get All pairwise comparisons
-library(gtools)
-all_pairwise_vector <- function(count_matrix_groups = study_matrix$samples$group){
+all_pairwise_vector <- function(count_matrix_groups = study_matrix$samples$group, single_direction = FALSE){
+  if (single_direction == FALSE){
   levels(count_matrix_groups) <- unique(count_matrix_groups)
   all_combinations_matrix <- combinations(len(unique(count_matrix_groups)),
                                           2,
@@ -113,41 +126,112 @@ all_pairwise_vector <- function(count_matrix_groups = study_matrix$samples$group
                                              " - ",
                                              all_combinations_matrix[,1])
   all_pairwise_comparisons <- append(pairwise_comparisons_direction_1, pairwise_comparisons_direction_2)
+  
+  } else if (single_direction == TRUE){
+    levels(count_matrix_groups) <- unique(count_matrix_groups)
+    all_combinations_matrix <- combinations(len(unique(count_matrix_groups)),
+                                            2,
+                                            levels(count_matrix_groups),
+                                            repeats.allowed = FALSE)
+    pairwise_comparisons_direction_1 <- paste0(all_combinations_matrix[,1],
+                                               " - ",
+                                               all_combinations_matrix[,2])
+    all_pairwise_comparisons <- pairwise_comparisons_direction_1
+  }
   return(all_pairwise_comparisons)
 }
 ####
 get_pairwise_DEGs <- function(count_matrix = DGE_matrix,
                               contrast_vector = contrast_to_make_vector,
                               fit = fit_model,
-                              lfc = 0.2
+                              lfc = 0.27
                               ) {
   levels(count_matrix$samples$group) <- unique(count_matrix$samples$group)
-  all_combinations_matrix <- combinations(len(unique(count_matrix$samples$group)),
+  all_combinations_matrix <- combinations(length(unique(count_matrix$samples$group)),
                                           2,
                                           levels(count_matrix$samples$group),
                                           repeats.allowed = FALSE)
   contrast_result <- list()
-  for(counter in 1:(len(contrast_vector))){
+  for(counter in 1:(length(contrast_vector))) {
     contrast <- do.call(makeContrasts, list(contrast_vector[counter], levels=unique(count_matrix$samples$group)))
     glmTreat <- glmTreat(fit, contrast = contrast, lfc = lfc)
-    if(counter <= len(contrast_vector)/2){
+    if(counter <= length(contrast_vector)/2){
       comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter,1], "_relative_to_", all_combinations_matrix[counter,2])
       contrast_result[[comparison_name]] <- list(Comparison = comparison_name, glmTreat = glmTreat)
       text <- paste0("Done: ", crayon::bold(crayon::red(all_combinations_matrix[counter,1])), " VS ", crayon::bold(crayon::cyan(all_combinations_matrix[counter,2])), "\n")
       cat(text)
       }  else {
-        comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter-len(contrast_vector)/2,2], "_relative_to_", all_combinations_matrix[counter-len(contrast_vector)/2,1])
+        comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter-length(contrast_vector)/2,2], "_relative_to_", all_combinations_matrix[counter-length(contrast_vector)/2,1])
         contrast_result[[comparison_name]] <- list(Comparison = comparison_name, glmTreat = glmTreat)
-        text <- paste0("Done: ",crayon::bold(crayon::cyan(all_combinations_matrix[counter-len(contrast_vector)/2,2])), " VS ", crayon::bold(crayon::red(all_combinations_matrix[counter-len(contrast_vector)/2,1])), "\n")
+        text <- paste0("Done: ",crayon::bold(crayon::cyan(all_combinations_matrix[counter-length(contrast_vector)/2,2])), " VS ", crayon::bold(crayon::red(all_combinations_matrix[counter-length(contrast_vector)/2,1])), "\n")
         cat(text)
       }
     }
   return(contrast_result)
 }
 
-
-
-
+### multicore get_pairwise_DEGs
+###
+###
+get_pairwise_DEGs_multicore <- function(count_matrix = DGE_matrix,
+                                        contrast_vector = contrast_to_make_vector,
+                                        fit = fit_model,
+                                        lfc = 0.27) {
+  # Load necessary packages
+  library(doParallel)
+  library(foreach)
+  library(progress)
+  
+  # Set up parallel backend
+  cl <- makeCluster(detectCores())  # Use all available cores
+  registerDoParallel(cl)
+  
+  # Set levels for groups
+  levels(count_matrix$samples$group) <- unique(count_matrix$samples$group)
+  
+  # Generate all pairwise combinations of group levels
+  all_combinations_matrix <- combinations(length(unique(count_matrix$samples$group)),
+                                          2,
+                                          levels(count_matrix$samples$group),
+                                          repeats.allowed = FALSE)
+  
+  # Initialize empty list to store results
+  contrast_result <- list()
+  
+  # Define a function to perform the contrast analysis
+  perform_contrast <- function(contrast_vector, counter, all_combinations_matrix, fit, lfc) {
+    contrast <- do.call(makeContrasts, list(contrast_vector, levels = unique(count_matrix$samples$group)))
+    glmTreat <- glmTreat(fit, contrast = contrast, lfc = lfc)
+    if (counter <= length(contrast_vector)/2) {
+      comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter, 1], "_relative_to_", all_combinations_matrix[counter, 2])
+    } else {
+      comparison_name <- paste0("DEGs_in_", all_combinations_matrix[counter - length(contrast_vector)/2, 2], "_relative_to_", all_combinations_matrix[counter - length(contrast_vector)/2, 1])
+    }
+    text <- paste0("Done: ", crayon::bold(crayon::red(all_combinations_matrix[counter, 1])), " VS ", crayon::bold(crayon::cyan(all_combinations_matrix[counter, 2])), "\n")
+    cat(text)
+    return(list(Comparison = comparison_name, glmTreat = glmTreat))
+  }
+  
+  # Initialize progress bar
+  pb <- progress_bar$new(total = length(contrast_vector))
+  
+  # Execute contrasts in parallel
+  contrast_result <- foreach(counter = 1:length(contrast_vector), .combine = 'c') %dopar% {
+    pb$tick()  # Increment progress bar
+    perform_contrast(contrast_vector[counter], counter, all_combinations_matrix, fit, lfc)
+  }
+  
+  # Close progress bar
+  pb$terminate()
+  
+  # Close parallel backend
+  stopCluster(cl)
+  
+  return(contrast_result)
+}
+###
+###
+###
 
 ### This part load some data for ensemble so some functions works
 
@@ -212,6 +296,7 @@ get_genes_of_a_go <- function(x = "GO:0006099") {
   if(len(c(which(duplicated(result_table$ensembl_gene_id)))) != 0){
     result_table[-c(which(duplicated(result_table$ensembl_gene_id))),] -> result_table
   } else{}
+  lapply(result_table, function(x) gsub("\"", "", x))
   return(result_table)
 }
 get_symbol_from_ID <- function(list = other_TFs$V2) {
@@ -233,19 +318,31 @@ get_symbol_from_ID <- function(list = other_TFs$V2) {
   cbind(list, symbols)
 }
 ##### This function make a heatmap of a GOs, it defalut to mean_z_score_of_CPM but you can add any matrix that have locus ID as rownames
-GO.heatmap <- function(DE_matrix = mean_z_score_of_CPM, GO = "GO:0016036", option1 = "G", option2 ="A"){
+GO.heatmap <- function(DE_matrix = mean_z_score_of_CPM, GO = "GO:0009789", option1 = "G", option2 ="A", cellwidth = 12.5, cellheight = 25, fontsize_row = 20, fontsize_col = 16){
 genes_of_go <- get_genes_of_a_go(GO)
 genes_of_go <- genes_of_go[order(genes_of_go$ensembl_gene_id), ]
 DE_matrix <- DE_matrix[order(rownames(DE_matrix)), ]
 genes_of_go_z_score <- DE_matrix[which(rownames(DE_matrix) %in% genes_of_go$ensembl_gene_id), ]
-genes_of_go %<>% mutate(ID = paste0(ensembl_gene_id, "_" ,tair_symbol))
-pheatmap(genes_of_go_z_score %>% t(),
-         cluster_rows = FALSE,
-         color = c(viridis(12, option = option1, end = 0.8, begin = 0.2, direction = -1), viridis(12, option = option2, end = 0.8, begin = 0.2)),
-         main = genes_of_go$GO_name[1],
-         border_color = "#00000000",
-         labels_col = genes_of_go$ID[(which(genes_of_go$ensembl_gene_id %in%
-                                              row.names(genes_of_go_z_score)))])
+genes_of_go %<>%   mutate(genes_of_go, ID = case_when(
+  genes_of_go$tair_symbol == "" ~ ensembl_gene_id,
+  genes_of_go$tair_symbol != "" ~ tair_symbol
+  )
+  )
+ComplexHeatmap::pheatmap(genes_of_go_z_score %>% t(),
+                         cluster_rows = FALSE,
+                         color = c(viridis(12, option = option1, end = 0.8, begin = 0.2, direction = -1), viridis(12, option = option2, end = 0.8, begin = 0.2)),
+                         main = paste0(GO, ": ", genes_of_go$GO_name[1]),
+                         fontfamily = "Arial",
+                         fontfamily_row = "Arial",
+                         fontfamily_col = "Arial",
+                         cellwidth = cellwidth,
+                         cellheight = cellheight,
+                         annotation_legend = FALSE,
+                         border_color = "#00000000",
+                         fontsize_row = fontsize_row,
+                         fontsize_col = fontsize_col,
+                         labels_col = genes_of_go$ID[(which(genes_of_go$ensembl_gene_id %in%
+                                                              row.names(genes_of_go_z_score)))])
 }
 
 GO_PCA <- function( GO = "GO:0009737", DE_matrix = z_score_of_CPM){
@@ -304,10 +401,10 @@ get_enriched_go_table <- function(genelist, aspect = "BP") {
   results.tab$Term <- str_extract(results.tab$Term, ".{1,45}")
   results.tab$Term[which(duplicated(results.tab$Term))] <- paste0(results.tab$Term[which(duplicated(results.tab$Term))],".")
   results.tab <- mutate(results.tab,
-                        "logpval" = -log10(as.numeric(results.tab$elimFisher)),
-                        "recall" = results.tab$Significant/results.tab$Annotated)
-  results.tab <- results.tab[rev(order(results.tab$logpval)),]
-  results.tab$logpval[which(is.na(results.tab$logpval))] <- max(results.tab$logpval[-which(is.na(results.tab$logpval))])+2 
+                        `-logpval` = -log10(as.numeric(results.tab$elimFisher)),
+                        `%  of Sig. genes` = results.tab$Significant/results.tab$Annotated)
+  results.tab <- results.tab[rev(order(results.tab$`-logpval`)),]
+  results.tab$`-logpval`[which(is.na(results.tab$`-logpval`))] <- max(results.tab$`-logpval`[-which(is.na(results.tab$`-logpval`))])+2 
   results.tab$Term <- factor(results.tab$Term, levels=rev(unique(results.tab$Term)))
   return(results.tab)
 }
@@ -350,19 +447,28 @@ boxplot_of_gene <- function(data = DGE_matrix$counts, gene = "AT2G35690"){
     )
 }
 
+###
+truncate_labels <- function(labels, max_length = 45) {
+  truncated <- ifelse(nchar(labels) > max_length, paste0(substr(labels, 1, max_length), "..."), labels)
+  truncated[which(duplicated(truncated))] <- paste0(truncated[which(duplicated(truncated))],".")
+  return(truncated)
+}
+
 
 ### this  function plot the enriched GOs ordered by  p val. The up or down only change the color scheme
-bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30) {
-      GOs_plot <- 
+bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30, No_of_characters = 45, Term_label_size = 18) {
+  data$Term <- truncate_labels(as.character(data$Term), No_of_characters)
+  data$Term <- factor(data$Term, levels=rev(unique(data$Term)))
+  GOs_plot <- 
       ggplot(
       data[1:Terms,],
-      aes(x=Term, y=logpval)
+      aes(x=Term, y=`-logpval`)
     ) + 
       scale_color_viridis_c(option = color, begin = 0.4,end =  0.8) +
-      geom_point(aes(color = recall, size = log10(Significant)), alpha = 0.9) +
+      geom_point(aes(color = `%  of Sig. genes`, size = log10(Significant)), alpha = 0.9) +
         scale_size(range = c(2.5, 10)) +
       stat_summary(geom = 'text', label = c(paste0(data$Annotated[Terms:1],"/", data$Significant[Terms:1])),
-                   fun.y = max, vjust = 0.25, hjust = -0.3, size = 5) +
+                   fun.y = max, vjust = 0.5, hjust = -0.3, size = 6) +
       theme_light() +
         theme(plot.margin = margin(0.5,0.5,0.5,0, "mm"),
               axis.line=element_line(color="#333333", size = 1),
@@ -374,23 +480,24 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30) {
               panel.grid.minor.x = element_blank(),
               panel.ontop = FALSE,
               panel.background = element_rect(fill = "transparent"),
-              axis.text.x = element_text(face="bold", color = "#444444",
-                                         size = 15, vjust = 0.5),
-              axis.text.y = element_text(face="plain", color = "#444444", size = 18),
-              axis.title.x = element_text(size = 16, vjust = 0.5),
+              axis.text.x = element_text(face="bold", color = "#222222",
+                                         size = 22, vjust = 0.5),
+              axis.text.y = element_text(face="plain", color = "#111111", size = Term_label_size),
+              axis.title.x = element_text(size = 20, vjust = 0.5),
               axis.title.y = element_blank(),
               legend.position = "top",
               legend.text=element_text(size=12.5),
-              legend.title=element_text(size=20)
-              #legend.justification = "left",
+              legend.title=element_text(size=16, hjust = 2),
+              legend.justification = "center",
+              legend.key.size = unit(1,"cm")
         ) +
-      ylim((min(data$logpval[1:Terms])-1), max(data$logpval[1:Terms])*1.6) +
+      ylim((min(data$`-logpval`[1:Terms])-1), max(data$`-logpval`[1:Terms])*1.6) +
         coord_flip() +
         guides(size = "none")
     return(GOs_plot)
 }
 
-volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D", n_of_scales = 2,
+volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A", option2 = "D", n_of_scales = 2,
                          scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10){
   
   data <- as.data.frame(lrt_table$table)
@@ -405,7 +512,6 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
   data <- data[order(data$color_index, decreasing = TRUE), ]
   
   if (n_of_scales == 2){
-    data$color <- 
       data$color <- 
       c(
         viridis(len(data$color_index[which(data$color_index >= 0)]) - round(len(data$color_index[which(data$color_index >= 0)])*scales_breaks[1]),
@@ -429,7 +535,7 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
         viridis(len(data$color_index[which(data$color_index < 0)]) - round(len(data$color_index[which(data$color_index < 0)])*scales_breaks[1]),
                 begin = color_breaks[1], end = color_breaks[2], direction = -1 * reverse_scales, option = option1)
       )
-  }else {
+  } else {
     stop("n_of_scales must be 1 or 2")
   }
   data$diff <- "No. sig"
@@ -441,27 +547,48 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
   data$color[which(data$diff == "No. sig")] <- "#666666"
   
   
-  upregulated <- data[which(data$diff == "Upregulated"),]
-  downregulated <- data[which(data$diff == "Downregulated"),] 
+  upregulated <- data[get.rownames(decideTests(lrt_table), 1),]
+  downregulated <- data[get.rownames(decideTests(lrt_table), -1),]
   upregulated <- upregulated[order(upregulated$logFC, decreasing = TRUE), ]
   downregulated <- downregulated[order(downregulated$logFC, decreasing = FALSE), ]
-  upregulated <- upregulated[1:n_tags,]
-  downregulated <- downregulated[1:n_tags,]
-  upregulated$ID <- upregulated %>% rownames()
-  downregulated$ID <- downregulated %>% rownames()
-  ggplot(data=data, aes(x=logFC, y=`-log10_pval`)) +
+  
+  if (dim(upregulated)[1] >= n_tags){
+    upregulated <- upregulated[1:n_tags,]
+    upregulated$ID <- upregulated %>% rownames()
+  } else if (n_tags > dim(upregulated)[1] && n_tags > 0) {
+    upregulated <- upregulated[1:dim(upregulated)[1],]
+      upregulated$ID <- upregulated %>% rownames()
+  } else {
+      upregulated <- NULL
+      }
+  
+  
+  if (dim(downregulated)[1] >= n_tags){
+    downregulated <- downregulated[1:n_tags,]
+    downregulated$ID <- downregulated %>% rownames()
+  } else if (n_tags > dim(upregulated)[1] && n_tags > 0) {
+    downregulated <- downregulated[1:dim(downregulated)[1],]
+    downregulated$ID <- downregulated %>% rownames()
+  } else {
+    downregulated <- NULL
+  }
+  
+    ggplot(data=data, aes(x=logFC, y=`-log10_pval`)) +
     #scale_color_manual(values = c(data$color))+
     labs(color = "") +
-    geom_point(color = data$color) + 
+    geom_point(color = data$color)  +
+      #if
     geom_text(aes(
-      y = max(data$`-log10_pval`)*1.1, x = -max(data$logFC) , label = paste(summary(decideTests(lrt_table))[1], "downregulated")),
-      size = 5) +
+      y = max(data$`-log10_pval`)*1.1, x = -max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[1], "Downregulated")),
+      size = 10) +
+      #if
     geom_text(aes(
-      y = max(data$`-log10_pval`)*1.1, x = max(data$logFC) , label = paste(summary(decideTests(lrt_table))[3], "upregulated")),
-      size = 5) +
+      y = max(data$`-log10_pval`)*1.1, x = max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[3], "Upregulated")),
+      size = 10) +
     geom_vline(xintercept=(min(data$logFC[data$upordown == 1])), col="#00000088", size = 1.2, linetype="dotted") +
     geom_vline(xintercept=(max(data$logFC[data$upordown == -1])), col="#00000088", size = 1.2, linetype="dotted") +
-    geom_hline(yintercept=-log10(max(data$PValue[data$upordown == -1])), col="#00000088", size = 1.25, linetype="dotted") +
+    geom_hline(yintercept=-log10(max(data$PValue[data$upordown == -1])), col="#00000088", size = 1.25, linetype="dotted") + {
+    if (is.null(upregulated)){} else {
     geom_text_repel(aes(label = upregulated$ID, x=upregulated$logFC, y=upregulated$`-log10_pval`),
                     data = upregulated, max.overlaps = 1000,
                     ylim = c(0, NA),
@@ -485,9 +612,10 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
                     direction = "y",
                     color = "#000000aa",
                     size = 4.5,
-                    seed = 42,
-                    
-      ) +
+                    seed = 42
+                    ) }
+      } +  {
+      if (is.null(downregulated)){} else { 
     geom_text_repel(aes(label = downregulated$ID, x=downregulated$logFC, y=downregulated$`-log10_pval`),
                     data = downregulated, max.overlaps = 1000,
                     ylim = c(0, NA),
@@ -511,9 +639,10 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
                     direction = "y",
                     color = "#000000aa",
                     size = 4.5,
-                    seed = 42,
-                    
-    ) +
+                    seed = 42
+                    )
+        }
+        }+
     theme_light() +
     theme(plot.margin = margin(0.5,0.5,0.5,0, "mm"),
           axis.line=element_line(color="#333333", size = 1),
@@ -526,10 +655,10 @@ volcano_plot <- function(lrt_table = lpVSlp_phi_lrt, option1 = "A", option2 = "D
           panel.ontop = FALSE,
           panel.background = element_rect(fill = "transparent"),
           axis.text.x = element_text(face="bold", color = "#444444",
-                                     size = 12, vjust = 0.5),
-          axis.text.y = element_text(face="bold", color = "#444444", size = 14),
-          axis.title.x = element_text(size = 16, vjust = 0.5),
-          axis.title.y = element_text(size = 16, vjust = 0.5)
+                                     size = 16, vjust = 0.5),
+          axis.text.y = element_text(face="bold", color = "#444444", size = 16),
+          axis.title.x = element_text(size = 22, vjust = 0.5),
+          axis.title.y = element_text(size = 22, vjust = 0.5)
     ) +
     xlab("Log2FC") + ylab("-log10 p-value") +
     xlim(-max(data$logFC)*2, max(data$logFC)*2) 
