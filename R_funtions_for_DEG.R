@@ -10,6 +10,9 @@ library(MASS)
 library(foreach)
 library(doParallel)
 library(doSNOW)
+library(stringr)
+library(dplyr)
+family_font <- "Arial"
 numCores <- detectCores() - 2
 numCores
 #registerDoParallel(numCores)
@@ -456,7 +459,7 @@ truncate_labels <- function(labels, max_length = 45) {
 
 
 ### this  function plot the enriched GOs ordered by  p val. The up or down only change the color scheme
-bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30, No_of_characters = 45, Term_label_size = 18) {
+bubbleplot <- function(data = gos_lpVShp_up, color = "D", direction = 1, begin = 0.4,end =  0.8, Terms = 30, No_of_characters = 45, Term_label_size = 18) {
   data$Term <- truncate_labels(as.character(data$Term), No_of_characters)
   data$Term <- factor(data$Term, levels=rev(unique(data$Term)))
   GOs_plot <- 
@@ -464,7 +467,7 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30, No_of_char
       data[1:Terms,],
       aes(x=Term, y=`-logpval`)
     ) + 
-      scale_color_viridis_c(option = color, begin = 0.4,end =  0.8) +
+      scale_color_viridis_c(option = color, begin = begin, end =  end, direction = direction) +
       geom_point(aes(color = `%  of Sig. genes`, size = log10(Significant)), alpha = 0.9) +
         scale_size(range = c(2.5, 10)) +
       stat_summary(geom = 'text', label = c(paste0(data$Annotated[Terms:1],"/", data$Significant[Terms:1])),
@@ -498,7 +501,7 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30, No_of_char
 }
 
 volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A", option2 = "D", n_of_scales = 2,
-                         scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10){
+                         scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10, DEGs_char_size = 5){
   
   data <- as.data.frame(lrt_table$table)
   data$upordown <- decideTests(lrt_table)
@@ -580,11 +583,11 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
       #if
     geom_text(aes(
       y = max(data$`-log10_pval`)*1.1, x = -max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[1], "Downregulated")),
-      size = 10) +
+      size = DEGs_char_size) +
       #if
     geom_text(aes(
       y = max(data$`-log10_pval`)*1.1, x = max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[3], "Upregulated")),
-      size = 10) +
+      size = DEGs_char_size) +
     geom_vline(xintercept=(min(data$logFC[data$upordown == 1])), col="#00000088", size = 1.2, linetype="dotted") +
     geom_vline(xintercept=(max(data$logFC[data$upordown == -1])), col="#00000088", size = 1.2, linetype="dotted") +
     geom_hline(yintercept=-log10(max(data$PValue[data$upordown == -1])), col="#00000088", size = 1.25, linetype="dotted") + {
@@ -794,3 +797,23 @@ ggplot(tf.data, aes(x = ID, y=Counts, fill = Counts)) +
   ) + ylab("Interactions")
 }
 
+drop_isoform <- function(matrix = txi.kallisto$counts){
+  GeneAnnotation <- 
+    data.frame(
+      isoform_id = unlist(rownames(matrix)),
+      gene_id = unlist(
+        str_extract_all(
+          rownames(
+            matrix), "AT[1|2|3|4|5|C|M]G\\w+"
+          )
+        )
+      )
+  matrix <-
+    isoformToGeneExp(
+      matrix,
+      isoformGeneAnnotation=GeneAnnotation,
+      quiet = FALSE
+      )
+  as.matrix(matrix) -> matrix
+  return(matrix)
+  }
