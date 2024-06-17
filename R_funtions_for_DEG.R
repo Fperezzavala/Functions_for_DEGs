@@ -12,6 +12,11 @@ library(doParallel)
 library(doSNOW)
 library(stringr)
 library(dplyr)
+library(reshape2)
+library(agricolae)
+library(ggpubr)
+library(ggplotify)
+library(grid)
 family_font <- "Arial"
 numCores <- detectCores() - 2
 numCores
@@ -47,7 +52,7 @@ get.rownames <- function(x,y) rownames(x[x == y,])
 # They take this plot from somewhere else I think.
 # This function uses a matrix and plot its values according to a provided gene list
 #
-plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, matrix = mean_z_score_of_CPM){
+plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, matrix = mean_z_score_of_CPM, end = 0.7, begin = 0.3, axis_title_size = 30, x.axis.margin = 35 ){
   #matrix$index <- 1:max(dim(matrix))
   matrix_of_gene_list <- melt(matrix[which(rownames(matrix) %in% c(gene_list)),])
   matrix_of_gene_list <- 
@@ -66,16 +71,16 @@ plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, ma
     geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = 0.7, color = "#00000000") +
     theme_light() +
     theme(axis.text=element_text(size=24, color = "#222222", family = family_font),
-                axis.title=element_text(size=24,face="bold"),
+                axis.title.x = element_text(size=axis_title_size,face="bold", margin = margin(t = x.axis.margin)),
           legend.position = "top",
-          axis.text.y = element_text(size = 28),
+          axis.text.y = element_text(size = 24),
           legend.title = element_blank()) +
     ggtitle(deparse(substitute(gene_list))) +
     ylab("Z score") +
     xlab("") +
     coord_flip() +
-    scale_fill_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
-    scale_color_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
+    scale_fill_manual(values = c(viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "A", end = end, begin = begin), viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "G", end = end, begin = begin, direction = -1))) +
+    scale_color_manual(values = c(viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "A", end = end, begin = begin), viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "G", end = end, begin = begin, direction = -1))) +
     scale_y_continuous(limits = c(-1.9, 1.9))
 }
 #### only for meta analisys 
@@ -293,9 +298,9 @@ summarise(hist.data)
 }
 #### This function get all the genes annotated for a GO, this is essential of many other function I wrote
 get_genes_of_a_go <- function(x = "GO:0006099") {
-  cbind(GTOGO$ensembl_gene_id[GTOGO$go_id == x], GTOGO$tair_symbol[GTOGO$go_id == x], GTOGO$name_1006[GTOGO$go_id == x]) %>%
+  cbind(GTOGO$ensembl_gene_id[GTOGO$go_id == x]) %>%
     as.data.frame() -> result_table
-  colnames(result_table) <- c("ensembl_gene_id", "tair_symbol", "GO_name")
+  colnames(result_table) <- c("ensembl_gene_id")
   if(len(c(which(duplicated(result_table$ensembl_gene_id)))) != 0){
     result_table[-c(which(duplicated(result_table$ensembl_gene_id))),] -> result_table
   } else{}
@@ -564,7 +569,6 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
   } else {
       upregulated <- NULL
       }
-  
   
   if (dim(downregulated)[1] >= n_tags){
     downregulated <- downregulated[1:n_tags,]
