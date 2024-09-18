@@ -510,7 +510,8 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", direction = 1, begin =
 }
 
 volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A", option2 = "D", n_of_scales = 2,
-                         scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10, DEGs_char_size = 5){
+                         scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10){
+  if(str_detect(data.root$DEGs_in_HPi_itpk1.1_Root_relative_to_HPi_itpk1.2_Root$glmTreat %>% class(), "DGE")){
   
   data <- as.data.frame(lrt_table$table)
   data$upordown <- decideTests(lrt_table)
@@ -574,6 +575,7 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
       upregulated <- NULL
       }
   
+  
   if (dim(downregulated)[1] >= n_tags){
     downregulated <- downregulated[1:n_tags,]
     downregulated$ID <- downregulated %>% rownames()
@@ -591,11 +593,11 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
       #if
     geom_text(aes(
       y = max(data$`-log10_pval`)*1.1, x = -max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[1], "Downregulated")),
-      size = DEGs_char_size) +
+      size = 10) +
       #if
     geom_text(aes(
       y = max(data$`-log10_pval`)*1.1, x = max(data$logFC)*1.1 , label = paste(summary(decideTests(lrt_table))[3], "Upregulated")),
-      size = DEGs_char_size) +
+      size = 10) +
     geom_vline(xintercept=(min(data$logFC[data$upordown == 1])), col="#00000088", size = 1.2, linetype="dotted") +
     geom_vline(xintercept=(max(data$logFC[data$upordown == -1])), col="#00000088", size = 1.2, linetype="dotted") +
     geom_hline(yintercept=-log10(max(data$PValue[data$upordown == -1])), col="#00000088", size = 1.25, linetype="dotted") + {
@@ -674,6 +676,9 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
     xlab("Log2FC") + ylab("-log10 p-value") +
     xlim(-max(data$logFC)*2, max(data$logFC)*2) 
     #ylim(-20, max(data$`-log10_pval`)*1.3)
+  } else {
+    warning("input is not a DGETable")
+  }
 }
 
 # copied from
