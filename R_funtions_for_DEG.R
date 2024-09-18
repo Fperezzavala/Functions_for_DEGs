@@ -398,23 +398,27 @@ venn_of_treatments <- function(z_score_matrix = mean_z_score_of_CPM, list_of_gen
 # This functions return the enriched GOs in a gene list and apply some calculations to the table to get the recall,
 # -log of p val, and some color thresholds for ploting and better visualization. default ontology is BP but you can select CC or MF
 get_enriched_go_table <- function(genelist, aspect = "BP") {
-  int.genes <- factor(as.integer(all.genes %in% genelist))
-  names(int.genes) <- all.genes
-  go.obj <- new("topGOdata", ontology = aspect
-                , allGenes = int.genes
-                , annot =annFUN.gene2GO
-                , gene2GO = geneID2GO)
-  results <- runTest(go.obj, algorithm = "elim", statistic = "fisher")
-  results.tab <- GenTable(object = go.obj, elimFisher = results, topNodes = 100)
-  results.tab$Term <- str_extract(results.tab$Term, ".{1,45}")
-  results.tab$Term[which(duplicated(results.tab$Term))] <- paste0(results.tab$Term[which(duplicated(results.tab$Term))],".")
-  results.tab <- mutate(results.tab,
-                        `-logpval` = -log10(as.numeric(results.tab$elimFisher)),
-                        `%  of Sig. genes` = results.tab$Significant/results.tab$Annotated)
-  results.tab <- results.tab[rev(order(results.tab$`-logpval`)),]
-  results.tab$`-logpval`[which(is.na(results.tab$`-logpval`))] <- max(results.tab$`-logpval`[-which(is.na(results.tab$`-logpval`))])+2 
-  results.tab$Term <- factor(results.tab$Term, levels=rev(unique(results.tab$Term)))
-  return(results.tab)
+  if (is.null(genelist)){
+    warning("genelist is NULL, double check that genelist is a list of genes") 
+  } else{
+    int.genes <- factor(as.integer(all.genes %in% genelist))
+    names(int.genes) <- all.genes
+    go.obj <- new("topGOdata", ontology = aspect
+                  , allGenes = int.genes
+                  , annot =annFUN.gene2GO
+                  , gene2GO = geneID2GO)
+    results <- runTest(go.obj, algorithm = "elim", statistic = "fisher")
+    results.tab <- GenTable(object = go.obj, elimFisher = results, topNodes = 100)
+    results.tab$Term <- str_extract(results.tab$Term, ".{1,45}")
+    results.tab$Term[which(duplicated(results.tab$Term))] <- paste0(results.tab$Term[which(duplicated(results.tab$Term))],".")
+    results.tab <- mutate(results.tab,
+                          `-logpval` = -log10(as.numeric(results.tab$elimFisher)),
+                          `%  of Sig. genes` = results.tab$Significant/results.tab$Annotated)
+    results.tab <- results.tab[rev(order(results.tab$`-logpval`)),]
+    results.tab$`-logpval`[which(is.na(results.tab$`-logpval`))] <- max(results.tab$`-logpval`[-which(is.na(results.tab$`-logpval`))])+2 
+    results.tab$Term <- factor(results.tab$Term, levels=rev(unique(results.tab$Term)))
+    return(results.tab)
+  }
 }
 
 boxplot_of_gene <- function(data = DGE_matrix$counts, gene = "AT2G35690"){
