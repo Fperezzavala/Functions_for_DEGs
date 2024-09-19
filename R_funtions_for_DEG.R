@@ -568,6 +568,8 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
   if (dim(upregulated)[1] >= n_tags){
     upregulated <- upregulated[1:n_tags,]
     upregulated$ID <- upregulated %>% rownames()
+  } else if (dim(upregulated)[1] == 0) {
+    upregulated <- NULL
   } else if (n_tags > dim(upregulated)[1] && n_tags > 0) {
     upregulated <- upregulated[1:dim(upregulated)[1],]
       upregulated$ID <- upregulated %>% rownames()
@@ -575,11 +577,12 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
       upregulated <- NULL
       }
   
-  
   if (dim(downregulated)[1] >= n_tags){
     downregulated <- downregulated[1:n_tags,]
     downregulated$ID <- downregulated %>% rownames()
-  } else if (n_tags > dim(upregulated)[1] && n_tags > 0) {
+  } else if (dim(downregulated)[1] == 0) {
+    downregulated <- NULL
+  } else if (n_tags > dim(downregulated)[1] && n_tags > 0) {
     downregulated <- downregulated[1:dim(downregulated)[1],]
     downregulated$ID <- downregulated %>% rownames()
   } else {
@@ -680,7 +683,6 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
     warning("input is not a DGETable")
   }
 }
-
 # copied from
 # https://gist.github.com/dgrtwo/eb7750e74997891d7c20
 
