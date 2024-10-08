@@ -10,14 +10,8 @@ library(MASS)
 library(foreach)
 library(doParallel)
 library(doSNOW)
-library(stringr)
-library(dplyr)
-library(reshape2)
-library(agricolae)
 library(ggpubr)
-library(ggplotify)
-library(grid)
-family_font <- "Arial"
+library(ggrepel)
 numCores <- detectCores() - 2
 numCores
 #registerDoParallel(numCores)
@@ -52,7 +46,7 @@ get.rownames <- function(x,y) rownames(x[x == y,])
 # They take this plot from somewhere else I think.
 # This function uses a matrix and plot its values according to a provided gene list
 #
-plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, matrix = mean_z_score_of_CPM, end = 0.7, begin = 0.3, axis_title_size = 30, x.axis.margin = 35 ){
+plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, matrix = mean_z_score_of_CPM){
   #matrix$index <- 1:max(dim(matrix))
   matrix_of_gene_list <- melt(matrix[which(rownames(matrix) %in% c(gene_list)),])
   matrix_of_gene_list <- 
@@ -71,16 +65,16 @@ plot_z_raincloud_of_genes <- function(gene_list = STOP1_targets_in_low_Pi_up, ma
     geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = 0.7, color = "#00000000") +
     theme_light() +
     theme(axis.text=element_text(size=24, color = "#222222", family = family_font),
-                axis.title.x = element_text(size=axis_title_size,face="bold", margin = margin(t = x.axis.margin)),
+                axis.title=element_text(size=24,face="bold"),
           legend.position = "top",
-          axis.text.y = element_text(size = 24),
+          axis.text.y = element_text(size = 28),
           legend.title = element_blank()) +
     ggtitle(deparse(substitute(gene_list))) +
     ylab("Z score") +
     xlab("") +
     coord_flip() +
-    scale_fill_manual(values = c(viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "A", end = end, begin = begin), viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "G", end = end, begin = begin, direction = -1))) +
-    scale_color_manual(values = c(viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "A", end = end, begin = begin), viridis(dim(mean_z_score_of_CPM)[[2]]/2, option = "G", end = end, begin = begin, direction = -1))) +
+    scale_fill_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
+    scale_color_manual(values = c(viridis(2, option = "A", end = 0.6, begin = 0.4), viridis(2, option = "G", end = 0.6, begin = 0.4, direction = -1))) +
     scale_y_continuous(limits = c(-1.9, 1.9))
 }
 #### only for meta analisys 
@@ -152,7 +146,7 @@ all_pairwise_vector <- function(count_matrix_groups = study_matrix$samples$group
 get_pairwise_DEGs <- function(count_matrix = DGE_matrix,
                               contrast_vector = contrast_to_make_vector,
                               fit = fit_model,
-                              lfc = 0.27
+                              lfc = 0.263
                               ) {
   levels(count_matrix$samples$group) <- unique(count_matrix$samples$group)
   all_combinations_matrix <- combinations(length(unique(count_matrix$samples$group)),
@@ -298,9 +292,9 @@ summarise(hist.data)
 }
 #### This function get all the genes annotated for a GO, this is essential of many other function I wrote
 get_genes_of_a_go <- function(x = "GO:0006099") {
-  cbind(GTOGO$ensembl_gene_id[GTOGO$go_id == x]) %>%
+  cbind(GTOGO$ensembl_gene_id[GTOGO$go_id == x], GTOGO$tair_symbol[GTOGO$go_id == x], GTOGO$name_1006[GTOGO$go_id == x]) %>%
     as.data.frame() -> result_table
-  colnames(result_table) <- c("ensembl_gene_id")
+  colnames(result_table) <- c("ensembl_gene_id", "tair_symbol", "GO_name")
   if(len(c(which(duplicated(result_table$ensembl_gene_id)))) != 0){
     result_table[-c(which(duplicated(result_table$ensembl_gene_id))),] -> result_table
   } else{}
@@ -326,7 +320,7 @@ get_symbol_from_ID <- function(list = other_TFs$V2) {
   cbind(list, symbols)
 }
 ##### This function make a heatmap of a GOs, it defalut to mean_z_score_of_CPM but you can add any matrix that have locus ID as rownames
-GO.heatmap <- function(DE_matrix = mean_z_score_of_CPM, GO = "GO:0009789", option1 = "G", option2 ="A", cellwidth = 12.5, cellheight = 25, fontsize_row = 20, fontsize_col = 16){
+GO.heatmap <- function(DE_matrix = mean_z_score_of_CPM, GO = "GO:0009789", option1 = "G", option2 ="A", cellwidth = 12.5, cellheight = 25, fontsize_row = 20, fontsize_col = 16) {
 genes_of_go <- get_genes_of_a_go(GO)
 genes_of_go <- genes_of_go[order(genes_of_go$ensembl_gene_id), ]
 DE_matrix <- DE_matrix[order(rownames(DE_matrix)), ]
@@ -468,7 +462,7 @@ truncate_labels <- function(labels, max_length = 45) {
 
 
 ### this  function plot the enriched GOs ordered by  p val. The up or down only change the color scheme
-bubbleplot <- function(data = gos_lpVShp_up, color = "D", direction = 1, begin = 0.4,end =  0.8, Terms = 30, No_of_characters = 45, Term_label_size = 18) {
+bubbleplot <- function(data = gos_lpVShp_up, color = "D", Terms = 30, No_of_characters = 45, Term_label_size = 18) {
   data$Term <- truncate_labels(as.character(data$Term), No_of_characters)
   data$Term <- factor(data$Term, levels=rev(unique(data$Term)))
   GOs_plot <- 
@@ -476,7 +470,7 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", direction = 1, begin =
       data[1:Terms,],
       aes(x=Term, y=`-logpval`)
     ) + 
-      scale_color_viridis_c(option = color, begin = begin, end =  end, direction = direction) +
+      scale_color_viridis_c(option = color, begin = 0.4,end =  0.8) +
       geom_point(aes(color = `%  of Sig. genes`, size = log10(Significant)), alpha = 0.9) +
         scale_size(range = c(2.5, 10)) +
       stat_summary(geom = 'text', label = c(paste0(data$Annotated[Terms:1],"/", data$Significant[Terms:1])),
@@ -508,6 +502,48 @@ bubbleplot <- function(data = gos_lpVShp_up, color = "D", direction = 1, begin =
         guides(size = "none")
     return(GOs_plot)
 }
+
+bubbleplot_custom_palette <- function(data = gos_lpVShp_up, palette = custom_pallete(12), Terms = 30, No_of_characters = 45, Term_label_size = 18) {
+  data$Term <- truncate_labels(as.character(data$Term), No_of_characters)
+  data$Term <- factor(data$Term, levels=rev(unique(data$Term)))
+  GOs_plot <- 
+    ggplot(
+      data[1:Terms,],
+      aes(x=Term, y=`-logpval`, colour = `%  of Sig. genes`)
+    ) + 
+    geom_point(aes(color = `%  of Sig. genes`, size = log10(Significant)), alpha = 0.9) +
+    scale_colour_gradientn(colours = palette) +
+    scale_size(range = c(2.5, 10)) +
+    stat_summary(geom = 'text', label = c(paste0(data$Annotated[Terms:1],"/", data$Significant[Terms:1])),
+                 fun.y = max, vjust = 0.5, hjust = -0.3, size = 6, color = "#111111") +
+    theme_light() +
+    theme(plot.margin = margin(0.5,0.5,0.5,0, "mm"),
+          axis.line=element_line(color="#333333", size = 1),
+          axis.ticks.y = element_line(color = "#222222", size = 1),
+          axis.ticks.x = element_blank(),
+          axis.ticks.length = unit(.2, "cm"),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.ontop = FALSE,
+          panel.background = element_rect(fill = "transparent"),
+          axis.text.x = element_text(face="bold", color = "#222222",
+                                     size = 22, vjust = 0.5),
+          axis.text.y = element_text(face="plain", color = "#111111", size = Term_label_size),
+          axis.title.x = element_text(size = 20, vjust = 0.5),
+          axis.title.y = element_blank(),
+          legend.position = "top",
+          legend.text=element_text(size=12.5),
+          legend.title=element_text(size=16, hjust = 2),
+          legend.justification = "center",
+          legend.key.size = unit(1,"cm")
+    ) +
+    ylim((min(data$`-logpval`[1:Terms])-1), max(data$`-logpval`[1:Terms])*1.6) +
+    coord_flip() +
+    guides(size = "none")
+  return(GOs_plot)
+}
+
 
 volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A", option2 = "D", n_of_scales = 2,
                          scales_breaks = c(0.8,0.2), color_breaks = c(0, 0.225, 0.45, 0.675, 0.9), reverse_scales = 1, n_tags = 10){
@@ -683,6 +719,7 @@ volcano_plot <- function(lrt_table = PS7_8_results[[i]]$glmTreat, option1 = "A",
     warning("input is not a DGETable")
   }
 }
+
 # copied from
 # https://gist.github.com/dgrtwo/eb7750e74997891d7c20
 
@@ -759,7 +796,7 @@ GeomFlatViolin <-
           required_aes = c("x", "y")
   )
 
-#### this one plot an histogram of the No of interactions
+#### This one plot a histogram of the No of interactions
 histogram.of.tf.interactions <- function(tf.data = tf.data, top.n = 30, option = "A", begin = 0.8,end =  0.8){
 read.csv("C:/Users/Admin/OneDrive - Texas Tech University/Phi arabidopsis/Phi DEG/lp_network/Ath_TF_list.txt",
          sep = "\t") -> tf.family
@@ -812,23 +849,3 @@ ggplot(tf.data, aes(x = ID, y=Counts, fill = Counts)) +
   ) + ylab("Interactions")
 }
 
-drop_isoform <- function(matrix = txi.kallisto$counts){
-  GeneAnnotation <- 
-    data.frame(
-      isoform_id = unlist(rownames(matrix)),
-      gene_id = unlist(
-        str_extract_all(
-          rownames(
-            matrix), "AT[1|2|3|4|5|C|M]G\\w+"
-          )
-        )
-      )
-  matrix <-
-    isoformToGeneExp(
-      matrix,
-      isoformGeneAnnotation=GeneAnnotation,
-      quiet = FALSE
-      )
-  as.matrix(matrix) -> matrix
-  return(matrix)
-  }
