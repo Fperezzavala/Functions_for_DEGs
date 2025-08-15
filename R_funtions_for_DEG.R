@@ -514,8 +514,10 @@ bubbleplot_custom_palette <- function(data = gos_lpVShp_up, palette = custom_pal
     geom_point(aes(color = `%  of Sig. genes`, size = log10(Significant)), alpha = 0.9) +
     scale_colour_gradientn(colours = palette) +
     scale_size(range = c(2.5, 10)) +
-    stat_summary(geom = 'text', label = c(paste0(data$Annotated[Terms:1],"/", data$Significant[Terms:1])),
-                 fun.y = max, vjust = 0.5, hjust = -0.3, size = 6, color = "#111111") +
+    geom_text(
+      aes(label = paste0(Annotated, "/", Significant)),
+      hjust = -0.3, vjust = 0.5, size = 6, color = "#111111"
+    ) +
     theme_light() +
     theme(plot.margin = margin(0.5,0.5,0.5,0, "mm"),
           axis.line=element_line(color="#333333", size = 1),
@@ -848,4 +850,5 @@ ggplot(tf.data, aes(x = ID, y=Counts, fill = Counts)) +
         legend.position = "none"
   ) + ylab("Interactions")
 }
+
 
